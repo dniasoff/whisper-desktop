@@ -1,0 +1,111 @@
+{
+  "name": "whisper-desktop",
+  "version": "1.0.0",
+  "description": "Desktop application for recording audio and transcribing with OpenAI's Whisper API",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "npm run build && electron .",
+    "dev": "concurrently \"npm run watch\" \"wait-on dist/main.js && electron .\"",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "clean-build": "node -e \"const fs = require('fs'); const path = require('path'); ['dist/Whisper Desktop.exe', 'dist/Whisper Desktop.exe.blockmap', 'dist/__msi-x64', 'dist/win-unpacked'].forEach(p => { try { const fullPath = path.join(__dirname, p); if (fs.existsSync(fullPath)) fs.rmSync(fullPath, {recursive: true}); } catch(e) {} });\"",
+    "ensure-mac-perms": "node -e \"const fs = require('fs'); const path = require('path'); const dir = path.join(__dirname, 'node_modules/@nut-tree-fork/node-mac-permissions'); if (!fs.existsSync(dir)) { fs.mkdirSync(dir, {recursive: true}); fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name: '@nut-tree-fork/node-mac-permissions', version: '1.0.0'})); }\"",
+    "sync-version": "node -e \"const { execSync } = require('child_process'); const fs = require('fs'); try { const tag = execSync('git describe --tags --abbrev=0', { encoding: 'utf8' }).trim(); const version = tag.replace(/^v/, ''); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); pkg.version = version; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n'); console.log('Synced version to', version); } catch(e) { console.log('No tags found, keeping current version'); }\"",
+    "build:windows": "npm run sync-version && npm run ensure-mac-perms && tsc -p tsconfig.prod.json && npm run clean-build && electron-builder --win"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dniasoff/whisper-desktop.git"
+  },
+  "keywords": [
+    "whisper",
+    "transcription",
+    "audio",
+    "voice-to-text"
+  ],
+  "author": "Whisper Desktop Contributors",
+  "license": "MIT",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/dniasoff/whisper-desktop/issues"
+  },
+  "homepage": "https://github.com/dniasoff/whisper-desktop#readme",
+  "build": {
+    "appId": "com.whisperdesktop.app",
+    "productName": "Whisper Desktop",
+    "files": [
+      "dist/**/*",
+      "!dist/__tests__",
+      "!dist/**/*.test.*",
+      "!dist/**/*.map",
+      "assets/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/node-mic/**/*"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "dniasoff",
+      "repo": "whisper-desktop"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "assets/whisper.ico",
+      "uninstallerIcon": "assets/whisper.ico",
+      "installerHeaderIcon": "assets/whisper.ico",
+      "runAfterFinish": true,
+      "artifactName": "${productName}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.10.1",
+    "@typescript-eslint/eslint-plugin": "^8.46.4",
+    "@typescript-eslint/parser": "^8.46.4",
+    "concurrently": "^9.2.1",
+    "electron": "^39.1.2",
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.39.1",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "wait-on": "^9.0.3"
+  },
+  "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.6",
+    "axios": "^1.13.2",
+    "electron-store": "^11.0.2",
+    "form-data": "^4.0.4",
+    "node-mic": "^1.0.1"
+  },
+  "optionalDependencies": {
+    "@nut-tree-fork/node-mac-permissions": "^2.2.0"
+  }
+}

@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Whisper Desktop</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      padding: 40px;
+      text-align: center;
+      max-width: 500px;
+      width: 90%;
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin: 20px 0;
+      padding: 15px;
+      background: #f5f5f5;
+      border-radius: 8px;
+    }
+
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #4caf50;
+    }
+
+    .status-indicator.recording {
+      background: #f44336;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .status-text {
+      font-size: 14px;
+      color: #333;
+      font-weight: 500;
+    }
+
+    .transcription-box {
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 15px;
+      margin: 20px 0;
+      min-height: 100px;
+      max-height: 200px;
+      overflow-y: auto;
+      text-align: left;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      color: #333;
+    }
+
+    .transcription-box.empty {
+      color: #999;
+      font-style: italic;
+    }
+
+    .info {
+      font-size: 12px;
+      color: #666;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid #eee;
+    }
+
+    .shortcut {
+      background: #e3f2fd;
+      color: #1976d2;
+      padding: 8px 12px;
+      border-radius: 4px;
+      display: inline-block;
+      font-weight: 600;
+      margin-top: 10px;
+    }
+
+    .error {
+      background: #ffcdd2;
+      color: #b71c1c;
+      padding: 16px;
+      border-radius: 8px;
+      margin: 15px 0;
+      border-left: 5px solid #b71c1c;
+      font-weight: 500;
+      box-shadow: 0 2px 8px rgba(185, 28, 28, 0.2);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .error-content {
+      flex: 1;
+      text-align: left;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .error-close {
+      background: none;
+      border: none;
+      color: #b71c1c;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 0;
+      min-width: auto;
+      font-weight: bold;
+    }
+
+    .error-close:hover {
+      opacity: 0.7;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin: 20px 0;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      min-width: 140px;
+    }
+
+    .record-btn {
+      background: #667eea;
+      color: white;
+    }
+
+    .record-btn:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .record-btn:active {
+      transform: translateY(0);
+    }
+
+    .record-btn.recording {
+      background: #f44336;
+    }
+
+    .record-btn.recording:hover {
+      background: #da190b;
+      box-shadow: 0 5px 15px rgba(244, 67, 54, 0.4);
+    }
+
+    .copy-btn {
+      background: #4caf50;
+      color: white;
+    }
+
+    .copy-btn:hover {
+      background: #45a049;
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+    }
+
+    .copy-btn:active {
+      transform: translateY(0);
+    }
+
+    .copy-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .copy-btn:disabled:hover {
+      transform: none;
+      box-shadow: none;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 10000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      animation: fadeIn 0.3s ease-in;
+    }
+
+    .modal.show {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .modal-content {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 400px;
+      width: 90%;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateY(-50px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #333;
+      font-size: 14px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 25px;
+    }
+
+    .modal-btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .modal-btn-save {
+      background: #667eea;
+      color: white;
+    }
+
+    .modal-btn-save:hover {
+      background: #5568d3;
+    }
+
+    .modal-btn-cancel {
+      background: #f0f0f0;
+      color: #333;
+    }
+
+    .modal-btn-cancel:hover {
+      background: #e0e0e0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <div>
+        <h1 style="margin: 0;">🎤 Whisper Desktop</h1>
+        <p class="subtitle" style="margin: 5px 0 0 0;">Press Ctrl+Q to record and transcribe</p>
+      </div>
+      <button id="settingsBtn" style="padding: 8px 16px; border: none; border-radius: 6px; background: #f0f0f0; cursor: pointer; font-size: 18px;">⚙️</button>
+    </div>
+
+    <div class="status">
+      <div class="status-indicator" id="statusIndicator"></div>
+      <span class="status-text" id="statusText">Ready</span>
+    </div>
+
+    <div id="errorContainer"></div>
+
+    <div class="button-group">
+      <button class="record-btn" id="recordBtn">Start Recording</button>
+      <button class="copy-btn" id="copyBtn">Copy to Clipboard</button>
+    </div>
+
+    <div class="transcription-box empty" id="transcriptionBox">
+      Transcriptions will appear here...
+    </div>
+
+    <div class="info">
+      <p>Press <span class="shortcut">Ctrl+Q</span> to start recording</p>
+      <p style="margin-top: 10px; font-size: 11px;">Recording automatically stops after 5 seconds of silence or 60 seconds maximum</p>
+    </div>
+  </div>
+
+  <div id="settingsModal" class="modal">
+    <div class="modal-content">
+      <h2 style="margin-top: 0; margin-bottom: 20px;">Settings</h2>
+
+      <div class="form-group">
+        <label for="shortcutInput">Keyboard Shortcut</label>
+        <input type="text" id="shortcutInput" placeholder="e.g., CmdOrCtrl+Q, Alt+R">
+      </div>
+
+      <div class="form-group">
+        <label for="apiUrlInput">API Endpoint</label>
+        <input type="text" id="apiUrlInput" placeholder="http://127.0.0.1:4444">
+      </div>
+
+      <div class="form-group">
+        <label for="apiTokenInput">API Token (optional)</label>
+        <input type="password" id="apiTokenInput" placeholder="Leave empty for local API">
+      </div>
+
+      <div class="modal-buttons">
+        <button class="modal-btn modal-btn-cancel" id="settingsCancelBtn">Cancel</button>
+        <button class="modal-btn modal-btn-save" id="settingsSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const statusIndicator = document.getElementById('statusIndicator');
+    const statusText = document.getElementById('statusText');
+    const transcriptionBox = document.getElementById('transcriptionBox');
+    const errorContainer = document.getElementById('errorContainer');
+    const recordBtn = document.getElementById('recordBtn');
+    const copyBtn = document.getElementById('copyBtn');
+    let isRecording = false;
+    let currentShortcut = 'Ctrl+Q'; // Default shortcut (synced from settings on load)
+    let hasTranscription = false;
+
+    // Load and display current shortcut
+    window.api.getSettings().then((settings) => {
+      currentShortcut = settings.shortcut;
+      updateShortcutDisplay();
+    });
+
+    window.api.onRecordingStarted(() => {
+      updateStatus(true);
+    });
+
+    window.api.onRecordingStopped(() => {
+      updateStatus(false);
+    });
+
+    window.api.onTranscriptionComplete(({ transcription }) => {
+      transcriptionBox.textContent = transcription;
+      transcriptionBox.classList.remove('empty');
+      hasTranscription = true;
+      copyBtn.disabled = false;
+    });
+
+    window.api.onError(({ message }) => {
+      showError(message);
+      updateStatus(false);
+    });
+
+    function updateStatus(recording) {
+      isRecording = recording;
+      if (recording) {
+        statusIndicator.classList.add('recording');
+        statusText.textContent = 'Recording...';
+        recordBtn.textContent = 'Stop Recording';
+        recordBtn.classList.add('recording');
+      } else {
+        statusIndicator.classList.remove('recording');
+        statusText.textContent = 'Ready';
+        recordBtn.textContent = 'Start Recording';
+        recordBtn.classList.remove('recording');
+      }
+    }
+
+    function updateShortcutDisplay() {
+      document.querySelector('.subtitle').textContent = `Press ${currentShortcut} to record and transcribe`;
+      document.querySelector('.info .shortcut').textContent = currentShortcut;
+    }
+
+    function showError(message) {
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'error';
+
+      // Create error content
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'error-content';
+      contentDiv.textContent = `⚠ ${message}`;
+
+      // Create close button
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'error-close';
+      closeBtn.textContent = '✕';
+      closeBtn.setAttribute('aria-label', 'Dismiss error');
+      closeBtn.onclick = () => errorDiv.remove();
+
+      errorDiv.appendChild(contentDiv);
+      errorDiv.appendChild(closeBtn);
+      errorContainer.appendChild(errorDiv);
+
+      // Determine timeout based on error severity
+      // API errors persist longer for user action
+      const isAPIError = message.includes('API') || message.includes('127.0.0.1:4444');
+      const timeout = isAPIError ? 15000 : 5000; // 15s for API errors, 5s for others
+
+      setTimeout(() => {
+        if (errorDiv.parentElement) {
+          errorDiv.remove();
+        }
+      }, timeout);
+    }
+
+    // Button click handler
+    recordBtn.addEventListener('click', async () => {
+      try {
+        if (isRecording) {
+          // Stop recording (status will update via 'recording-stopped' event)
+          await window.api.stopRecording();
+        } else {
+          // Start recording (status will update via 'recording-started' event)
+          await window.api.startRecording();
+        }
+      } catch (error) {
+        console.error('Failed to toggle recording:', error);
+        showError('Failed to toggle recording');
+      }
+    });
+
+    // Copy button click handler
+    copyBtn.addEventListener('click', async () => {
+      try {
+        const result = await window.api.copyToClipboard();
+        if (result.success) {
+          // Temporarily change button text to show success
+          const originalText = copyBtn.textContent;
+          copyBtn.textContent = 'Copied!';
+          copyBtn.style.background = '#2196F3';
+          setTimeout(() => {
+            copyBtn.textContent = originalText;
+            copyBtn.style.background = '';
+          }, 1500);
+        } else {
+          showError(result.message || 'Failed to copy to clipboard');
+        }
+      } catch (error) {
+        console.error('Failed to copy to clipboard:', error);
+        showError('Failed to copy to clipboard');
+      }
+    });
+
+    // Check initial status
+    window.api.getStatus(({ isRecording }) => {
+      updateStatus(isRecording);
+    });
+
+    // Disable copy button initially (enabled when transcription is available)
+    copyBtn.disabled = true;
+
+    // Settings modal handling
+    const settingsModal = document.getElementById('settingsModal');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const settingsCancelBtn = document.getElementById('settingsCancelBtn');
+    const settingsSaveBtn = document.getElementById('settingsSaveBtn');
+    const shortcutInput = document.getElementById('shortcutInput');
+    const apiUrlInput = document.getElementById('apiUrlInput');
+    const apiTokenInput = document.getElementById('apiTokenInput');
+
+    settingsBtn.addEventListener('click', async () => {
+      const settings = await window.api.getSettings();
+      shortcutInput.value = settings.shortcut || '';
+      apiUrlInput.value = settings.apiUrl || '';
+      apiTokenInput.value = settings.apiToken || '';
+      settingsModal.classList.add('show');
+    });
+
+    settingsCancelBtn.addEventListener('click', () => {
+      settingsModal.classList.remove('show');
+    });
+
+    settingsSaveBtn.addEventListener('click', async () => {
+      try {
+        await window.api.saveSettings({
+          shortcut: shortcutInput.value || 'Ctrl+Q',
+          apiUrl: apiUrlInput.value || 'http://127.0.0.1:4444',
+          apiToken: apiTokenInput.value || '',
+        });
+        // Reload settings and update display
+        const settings = await window.api.getSettings();
+        currentShortcut = settings.shortcut;
+        updateShortcutDisplay();
+        settingsModal.classList.remove('show');
+        showError('Settings saved! Restart required for shortcut changes to take effect.');
+      } catch (error) {
+        console.error('Failed to save settings:', error);
+        showError('Failed to save settings');
+      }
+    });
+
+    settingsModal.addEventListener('click', (event) => {
+      if (event.target === settingsModal) {
+        settingsModal.classList.remove('show');
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+appId: com.whisperdesktop.app
+productName: Whisper Desktop
+
+directories:
+  buildResources: assets
+  output: release
+
+files:
+  - dist/**/*
+  - assets/**/*
+  - public/**/*
+  - package.json
+
+asar: true
+
+asarUnpack:
+  - node_modules/node-mic/**/*
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  installerIcon: assets/whisper.ico
+  uninstallerIcon: assets/whisper.ico
+  installerHeaderIcon: assets/whisper.ico
+  runAfterFinish: true
+  artifactName: ${productName}.${ext}
+
+# Reduce installer size by excluding unnecessary locales
+extraMetadata:
+  main: dist/main.js
+
+# GitHub Releases publishing configuration
+publish:
+  provider: github
+  releaseType: release

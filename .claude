@@ -1,0 +1,87 @@
+# Whisper Desktop Application - Project Memory
+
+## Project Overview
+**Whisper Desktop** is a lightweight Windows desktop application that provides a notification icon interface for recording audio and transcribing speech to text using the Whisper Assistant API.
+
+### Key Features
+- Global keyboard shortcut (F9) to start/stop audio recording
+- System notification icon (tray icon) for quick access
+- Integration with Whisper Assistant API (http://127.0.0.1:4444/docs)
+- Records audio and sends to transcription API
+- Results can be pasted/used in any application
+
+### Core Specifications
+- **Platform**: Windows
+- **Target**: Desktop application (likely Electron or similar)
+- **API Backend**: Whisper Assistant API v0.1.0 (OAS 3.1)
+- **Keyboard Shortcut**: F9
+- **Interface**: Notification/Tray Icon
+
+## API Endpoints
+Base URL: `http://127.0.0.1:4444`
+
+### Available Endpoints
+- `GET /` - Root
+- `GET /v1/health` - Health check
+- `POST /v1/audio/transcriptions` - Transcribe Audio (primary endpoint)
+- `POST /transcribe` - Transcribe Alias (alternative endpoint)
+
+### Request/Response Structure
+- **Audio Input**: Multi-part form data with audio file
+- **Request Models**:
+  - `Body_transcribe_alias_transcribe_post`
+  - `Body_transcribe_audio_v1_audio_transcriptions_post`
+- **Error Models**: `HTTPValidationError`, `ValidationError`
+
+## Technical Stack
+- ✅ Framework: **Electron** 39.1.2
+- ✅ Language: **TypeScript** 5.9.3
+- ✅ Audio Recording: **node-record-lpcm16** 1.0.1
+- ✅ HTTP Client: **axios** 1.13.2
+- ✅ Tray Icon: **Electron built-in**
+- ✅ Global Hotkeys: **Electron globalShortcut API**
+- ✅ Form Data: **form-data** 4.0.4
+- ✅ Bundler: **TypeScript Compiler** with Webpack support
+
+### Project Structure
+```
+whisper-desktop/
+├── src/
+│   ├── main.ts              # Electron main process
+│   ├── preload.ts           # Preload script for IPC
+│   └── services/
+│       ├── hotkeyService.ts # F9 hotkey registration
+│       ├── audioService.ts  # Audio recording logic
+│       └── apiService.ts    # Whisper API integration
+├── public/
+│   └── index.html           # UI template
+├── dist/                    # Compiled JS (generated)
+├── package.json
+├── tsconfig.json
+└── .gitignore
+```
+
+## Architecture Overview
+1. **Main Process** (main.ts): Electron window, tray icon, app lifecycle
+2. **Hotkey Service** (hotkeyService.ts): Registers F9 global shortcut
+3. **Audio Service** (audioService.ts): Records audio via node-record-lpcm16, saves to userData/recordings
+4. **API Service** (apiService.ts): Posts audio to Whisper API, returns transcription
+5. **Preload Script** (preload.ts): Safe IPC bridge between renderer and main process
+6. **UI** (index.html): Shows recording status, displays transcription, real-time updates
+
+## Development Notes
+- API runs locally on port 4444
+- Ensure health check before recording attempts
+- Handle audio file format compatibility with API
+- Consider error handling for API timeouts
+- Record user preference for F9 hotkey behavior
+
+## Next Steps
+1. Choose framework and technology stack
+2. Setup project structure
+3. Implement audio recording with F9 hotkey
+4. Create tray icon interface
+5. Integrate with Whisper Assistant API
+6. Test transcription workflow
+7. Package for Windows distribution
+
