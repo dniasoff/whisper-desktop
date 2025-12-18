@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld('api', {
   copyToClipboard: () => {
     return ipcRenderer.invoke('copy-to-clipboard');
   },
+  getAudioDevices: () => {
+    return ipcRenderer.invoke('get-audio-devices');
+  },
 });
 
 declare global {
@@ -54,6 +57,7 @@ declare global {
       getSettings: () => Promise<any>;
       saveSettings: (settings: any) => Promise<any>;
       copyToClipboard: () => Promise<{ success: boolean; message?: string }>;
+      getAudioDevices: () => Promise<Array<{ id: string; name: string }>>;
     };
   }
 }

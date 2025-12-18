@@ -285,7 +285,8 @@
       font-family: inherit;
     }
 
-    .form-group input:focus {
+    .form-group input:focus,
+    .form-group select:focus {
       outline: none;
       border-color: #667eea;
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
@@ -375,6 +376,23 @@
       <div class="form-group">
         <label for="apiTokenInput">API Token (optional)</label>
         <input type="password" id="apiTokenInput" placeholder="Leave empty for local API">
+      </div>
+
+      <div class="form-group">
+        <label style="display: flex; align-items: center; cursor: pointer; user-select: none;">
+          <input type="checkbox" id="autoMuteInput" style="width: auto; margin-right: 10px; cursor: pointer;">
+          <span>Auto-mute system audio during recording</span>
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label for="micDeviceInput">Microphone Device</label>
+        <select id="micDeviceInput" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; font-family: inherit; cursor: pointer;">
+          <option value="default">System Default Microphone</option>
+        </select>
+        <small style="display: block; margin-top: 5px; font-size: 11px; color: #666;">
+          Select the microphone you want to use for recording
+        </small>
       </div>
 
       <div class="modal-buttons">
@@ -527,12 +545,34 @@
     const shortcutInput = document.getElementById('shortcutInput');
     const apiUrlInput = document.getElementById('apiUrlInput');
     const apiTokenInput = document.getElementById('apiTokenInput');
+    const autoMuteInput = document.getElementById('autoMuteInput');
+    const micDeviceInput = document.getElementById('micDeviceInput');
 
     settingsBtn.addEventListener('click', async () => {
       const settings = await window.api.getSettings();
       shortcutInput.value = settings.shortcut || '';
       apiUrlInput.value = settings.apiUrl || '';
       apiTokenInput.value = settings.apiToken || '';
+      autoMuteInput.checked = settings.autoMuteAudio !== false; // Default to true
+
+      // Load available audio devices
+      try {
+        const devices = await window.api.getAudioDevices();
+        micDeviceInput.innerHTML = '';
+        devices.forEach(device => {
+          const option = document.createElement('option');
+          option.value = device.id;
+          option.textContent = device.name;
+          micDeviceInput.appendChild(option);
+        });
+        micDeviceInput.value = settings.micDevice || 'default';
+      } catch (error) {
+        console.error('Failed to load audio devices:', error);
+        // Fallback to default
+        micDeviceInput.innerHTML = '<option value="default">System Default Microphone</option>';
+        micDeviceInput.value = 'default';
+      }
+
       settingsModal.classList.add('show');
     });
 
@@ -546,6 +586,8 @@
           shortcut: shortcutInput.value || 'Ctrl+Q',
           apiUrl: apiUrlInput.value || 'http://127.0.0.1:4444',
           apiToken: apiTokenInput.value || '',
+          autoMuteAudio: autoMuteInput.checked,
+          micDevice: micDeviceInput.value || 'default',
         });
         // Reload settings and update display
         const settings = await window.api.getSettings();

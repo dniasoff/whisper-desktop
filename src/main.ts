@@ -2,10 +2,11 @@ import { app, BrowserWindow, Menu, Tray, ipcMain, Notification } from 'electron'
 import path from 'path';
 import * as fs from 'fs';
 import registerShortcuts from './services/hotkeyService';
-import { recordAudio, stopRecording, cleanupOldRecordings } from './services/recordingService';
+import { recordAudio, stopRecording, cleanupOldRecordings, getAudioDevices } from './services/recordingService';
 import { transcribeAudio, checkAPIHealth, setApiConfig } from './services/apiService';
 import { getSettings, saveSettings } from './services/settingsService';
 import { pasteTranscriptClipboard, copyToClipboard } from './services/pasteService';
+import { saveAndMuteAudio, restoreAudio } from './services/audioControlService';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -160,6 +161,9 @@ app.on('before-quit', () => {
 });
 
 const startRecordingSession = async () => {
+  const settings = getSettings();
+  let audioMuted = false;
+
   try {
     cleanupOldRecordings(7 * 24);
 
@@ -171,10 +175,21 @@ const startRecordingSession = async () => {
       return;
     }
 
+    // Mute system audio if enabled in settings
+    if (settings.autoMuteAudio) {
+      try {
+        await saveAndMuteAudio();
+        audioMuted = true;
+      } catch (error) {
+        console.error('Failed to mute audio:', error);
+        // Continue recording even if mute fails
+      }
+    }
+
     mainWindow?.webContents.send('recording-started');
     showSystemNotification('Whisper Desktop', 'Recording...', 2000);
 
-    const audioPath = await recordAudio();
+    const audioPath = await recordAudio(settings.micDevice || 'default');
     mainWindow?.webContents.send('recording-stopped');
 
     const stats = fs.statSync(audioPath);
@@ -229,6 +244,14 @@ const startRecordingSession = async () => {
 
     mainWindow?.webContents.send('error', { message: errorMessage });
   } finally {
+    // Restore audio if it was muted
+    if (audioMuted) {
+      try {
+        await restoreAudio();
+      } catch (error) {
+        console.error('Failed to restore audio:', error);
+      }
+    }
     isRecording = false;
   }
 };
@@ -293,4 +316,8 @@ ipcMain.handle('copy-to-clipboard', () => {
     return { success: true };
   }
   return { success: false, message: 'No transcription to copy' };
+});
+
+ipcMain.handle('get-audio-devices', async () => {
+  return await getAudioDevices();
 });

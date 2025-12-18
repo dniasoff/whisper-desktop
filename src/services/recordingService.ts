@@ -1,7 +1,10 @@
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 let recordingProcess: ReturnType<typeof spawn> | null = null;
 
@@ -17,9 +20,53 @@ function getSoxPath(): string {
 }
 
 /**
- * Record audio using sox directly
+ * Get list of available audio input devices
  */
-export async function recordAudio(): Promise<string> {
+export async function getAudioDevices(): Promise<Array<{ id: string; name: string }>> {
+  try {
+    const soxPath = getSoxPath();
+
+    if (!fs.existsSync(soxPath)) {
+      console.error('sox.exe not found');
+      return [{ id: 'default', name: 'System Default Microphone' }];
+    }
+
+    // List audio devices using sox
+    const { stdout, stderr } = await execAsync(`"${soxPath}" -t waveaudio -1`, {
+      windowsHide: true,
+      timeout: 5000
+    });
+
+    const devices: Array<{ id: string; name: string }> = [
+      { id: 'default', name: 'System Default Microphone' }
+    ];
+
+    // Parse device list from stdout
+    const lines = stdout.split('\n').filter(line => line.trim());
+
+    lines.forEach((line, index) => {
+      const trimmedLine = line.trim();
+      if (trimmedLine && !trimmedLine.includes('Available') && !trimmedLine.includes('device')) {
+        // Extract device name (format varies, but usually contains device info)
+        devices.push({
+          id: index.toString(),
+          name: trimmedLine || `Device ${index}`
+        });
+      }
+    });
+
+    return devices;
+  } catch (error) {
+    console.error('Error listing audio devices:', error);
+    return [{ id: 'default', name: 'System Default Microphone' }];
+  }
+}
+
+/**
+ * Record audio using sox directly
+ * @param device - The audio input device (default: 'default')
+ */
+export async function recordAudio(device: string = 'default'): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
       const appDataPath = app.getPath('userData');
@@ -39,11 +86,11 @@ export async function recordAudio(): Promise<string> {
       }
 
       // Start recording with sox
-      // Record from default input device to WAV file
+      // Record from specified input device to WAV file
       // On Windows, sox requires -t waveaudio and device specification
       recordingProcess = spawn(soxPath, [
         '-t', 'waveaudio',  // Windows audio driver
-        'default',          // default input device
+        device,             // input device ('default' or device number/name)
         '-r', '16000',      // sample rate
         '-c', '1',          // mono
         audioPath,          // output file
