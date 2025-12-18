@@ -52,13 +52,14 @@ class WhisperAPI {
    * @returns Transcribed text
    */
   async transcribe(audioPath: string): Promise<string> {
+    let fileStream: fs.ReadStream | null = null;
     try {
       // Check if file exists
       if (!fs.existsSync(audioPath)) {
         throw new Error(`Audio file not found: ${audioPath}`);
       }
 
-      const fileStream = fs.createReadStream(audioPath);
+      fileStream = fs.createReadStream(audioPath);
       const formData = new FormData();
       formData.append('file', fileStream);
       formData.append('language', this.language);
@@ -67,12 +68,20 @@ class WhisperAPI {
         headers: formData.getHeaders(),
       });
 
+      // Ensure stream is closed
+      fileStream.destroy();
+      fileStream = null;
+
       if (response.data && response.data.text) {
         return response.data.text;
       }
 
       throw new Error('Invalid response from API');
     } catch (error) {
+      // Ensure stream is closed on error
+      if (fileStream) {
+        fileStream.destroy();
+      }
       console.error('Transcription error:', error);
       throw error;
     }
@@ -84,12 +93,13 @@ class WhisperAPI {
    * @returns Transcribed text
    */
   async transcribeAlias(audioPath: string): Promise<string> {
+    let fileStream: fs.ReadStream | null = null;
     try {
       if (!fs.existsSync(audioPath)) {
         throw new Error(`Audio file not found: ${audioPath}`);
       }
 
-      const fileStream = fs.createReadStream(audioPath);
+      fileStream = fs.createReadStream(audioPath);
       const formData = new FormData();
       formData.append('file', fileStream);
       formData.append('language', this.language);
@@ -98,12 +108,20 @@ class WhisperAPI {
         headers: formData.getHeaders(),
       });
 
+      // Ensure stream is closed
+      fileStream.destroy();
+      fileStream = null;
+
       if (response.data && response.data.text) {
         return response.data.text;
       }
 
       throw new Error('Invalid response from API');
     } catch (error) {
+      // Ensure stream is closed on error
+      if (fileStream) {
+        fileStream.destroy();
+      }
       console.error('Transcription alias error:', error);
       throw error;
     }

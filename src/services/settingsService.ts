@@ -9,6 +9,7 @@ interface Settings {
 }
 
 const store = new Store({
+  name: 'config',
   defaults: {
     shortcut: 'Ctrl+Q',
     apiUrl: 'http://127.0.0.1:4444',

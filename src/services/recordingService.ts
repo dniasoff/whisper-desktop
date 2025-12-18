@@ -9,48 +9,62 @@ const execAsync = promisify(exec);
 let recordingProcess: ReturnType<typeof spawn> | null = null;
 
 /**
- * Get the path to sox.exe in the unpacked directory
+ * Get the path to sox.exe
+ * Checks multiple locations: packaged app, development node_modules, and system PATH
  */
 function getSoxPath(): string {
   const appPath = app.getAppPath();
-  // appPath is like: C:\...\resources\app.asar
-  // We need to go to: C:\...\resources\app.asar.unpacked\...
-  const resourcesDir = path.dirname(appPath);
-  return path.join(resourcesDir, 'app.asar.unpacked', 'node_modules', 'node-mic', 'sox-win32', 'sox.exe');
+
+  // Check if we're in a packaged app (asar archive)
+  if (appPath.includes('.asar')) {
+    // appPath is like: C:\...\resources\app.asar
+    // We need to go to: C:\...\resources\app.asar.unpacked\...
+    const resourcesDir = path.dirname(appPath);
+    const asarPath = path.join(resourcesDir, 'app.asar.unpacked', 'node_modules', 'node-mic', 'sox-win32', 'sox.exe');
+    if (fs.existsSync(asarPath)) {
+      return asarPath;
+    }
+  }
+
+  // Development mode: sox is in node_modules
+  const devPath = path.join(appPath, 'node_modules', 'node-mic', 'sox-win32', 'sox.exe');
+  if (fs.existsSync(devPath)) {
+    return devPath;
+  }
+
+  // Fallback: assume sox is in system PATH
+  return 'sox';
 }
 
 /**
- * Get list of available audio input devices
+ * Get list of available audio input devices using PowerShell
  */
 export async function getAudioDevices(): Promise<Array<{ id: string; name: string }>> {
   try {
-    const soxPath = getSoxPath();
-
-    if (!fs.existsSync(soxPath)) {
-      console.error('sox.exe not found');
-      return [{ id: 'default', name: 'System Default Microphone' }];
-    }
-
-    // List audio devices using sox
-    const { stdout, stderr } = await execAsync(`"${soxPath}" -t waveaudio -1`, {
-      windowsHide: true,
-      timeout: 5000
-    });
+    // Use PowerShell to get audio capture endpoints
+    // Filter for devices that start with "Microphone" or "Headset" (input devices)
+    const { stdout } = await execAsync(
+      `powershell -ExecutionPolicy Bypass -NoProfile -Command "Get-PnpDevice -Class AudioEndpoint -Status OK | ForEach-Object { $_.FriendlyName }"`,
+      { windowsHide: true, timeout: 10000 }
+    );
 
     const devices: Array<{ id: string; name: string }> = [
       { id: 'default', name: 'System Default Microphone' }
     ];
 
-    // Parse device list from stdout
-    const lines = stdout.split('\n').filter(line => line.trim());
-
-    lines.forEach((line, index) => {
-      const trimmedLine = line.trim();
-      if (trimmedLine && !trimmedLine.includes('Available') && !trimmedLine.includes('device')) {
-        // Extract device name (format varies, but usually contains device info)
+    const lines = stdout.trim().split('\n').filter(line => line.trim());
+    lines.forEach((line) => {
+      const name = line.trim();
+      // Filter for input devices (Microphone, Headset) - exclude speakers/headphones (output)
+      if (name && (
+        name.toLowerCase().startsWith('microphone') ||
+        name.toLowerCase().startsWith('headset') ||
+        name.toLowerCase().includes('mic') ||
+        name.toLowerCase().includes('input')
+      ) && !name.toLowerCase().includes('speaker')) {
         devices.push({
-          id: index.toString(),
-          name: trimmedLine || `Device ${index}`
+          id: name, // Use the device name as ID - sox can accept device names
+          name: name
         });
       }
     });
@@ -80,8 +94,8 @@ export async function recordAudio(device: string = 'default'): Promise<string> {
       const audioPath = path.join(audioDir, `recording-${timestamp}.wav`);
       const soxPath = getSoxPath();
 
-      // Check if sox exists
-      if (!fs.existsSync(soxPath)) {
+      // Check if sox exists (only if it's a full path, not just 'sox' for system PATH)
+      if (soxPath !== 'sox' && !fs.existsSync(soxPath)) {
         throw new Error(`sox.exe not found at ${soxPath}`);
       }
 

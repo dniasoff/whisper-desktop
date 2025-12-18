@@ -213,11 +213,22 @@ const startRecordingSession = async () => {
 
     await pasteTranscriptClipboard(transcription, true);
 
-    try {
-      fs.unlinkSync(audioPath);
-    } catch (error) {
-      console.error('Failed to delete audio file:', error);
-    }
+    // Delete audio file with retry (file may be briefly locked after API upload)
+    const deleteWithRetry = async (path: string, retries = 3, delay = 500) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          fs.unlinkSync(path);
+          return;
+        } catch (err) {
+          if (i < retries - 1) {
+            await new Promise(r => setTimeout(r, delay));
+          }
+        }
+      }
+    };
+    deleteWithRetry(audioPath).catch(() => {
+      // Silently fail - cleanup service will handle old files
+    });
   } catch (error) {
     console.error('Recording/transcription error:', error);
 

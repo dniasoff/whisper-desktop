@@ -3,224 +3,141 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-interface VolumeState {
-  volume: number;
-  isMuted: boolean;
-}
-
-let previousVolumeState: VolumeState | null = null;
+let wasAlreadyMuted = false;
 
 /**
- * Get current system volume and mute state (Windows only)
- * Uses PowerShell with COM to access Windows Audio APIs
+ * Safe console log that won't throw on broken pipe
  */
-export async function getCurrentVolume(): Promise<VolumeState> {
+function safeLog(...args: unknown[]): void {
+  try {
+    console.log(...args);
+  } catch {
+    // Ignore EPIPE and other logging errors
+  }
+}
+
+/**
+ * Safe console error that won't throw on broken pipe
+ */
+function safeError(...args: unknown[]): void {
+  try {
+    console.error(...args);
+  } catch {
+    // Ignore EPIPE and other logging errors
+  }
+}
+
+/**
+ * Check if system audio is currently muted
+ */
+async function isMuted(): Promise<boolean> {
   try {
     const script = `
-      Add-Type -TypeDefinition @"
-      using System.Runtime.InteropServices;
-      [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-      interface IAudioEndpointVolume {
-        int NotImpl1(); int NotImpl2();
-        int GetChannelCount(out int channelCount);
-        int SetMasterVolumeLevel(float level, System.Guid eventContext);
-        int SetMasterVolumeLevelScalar(float level, System.Guid eventContext);
-        int GetMasterVolumeLevel(out float level);
-        int GetMasterVolumeLevelScalar(out float level);
-        int SetChannelVolumeLevel(uint channelNumber, float level, System.Guid eventContext);
-        int SetChannelVolumeLevelScalar(uint channelNumber, float level, System.Guid eventContext);
-        int GetChannelVolumeLevel(uint channelNumber, out float level);
-        int GetChannelVolumeLevelScalar(uint channelNumber, out float level);
-        int SetMute([MarshalAs(UnmanagedType.Bool)] bool isMuted, System.Guid eventContext);
-        int GetMute(out bool isMuted);
-      }
-"@
-      $deviceEnumeratorType = [Type]::GetTypeFromCLSID([Guid]"BCDE0395-E52F-467C-8E3D-C4579291692E")
-      $deviceEnumerator = [Activator]::CreateInstance($deviceEnumeratorType)
-      $defaultDevice = $deviceEnumerator.GetDefaultAudioEndpoint(0, 1)
-      $audioEndpointVolumeType = [Type]::GetTypeFromCLSID([Guid]"5CDF2C82-841E-4546-9722-0CF74078229A")
-      $audioEndpointVolume = [System.Runtime.InteropServices.Marshal]::GetComInterfaceForObject($defaultDevice, [IAudioEndpointVolume])
-      $volumeInterface = [System.Runtime.InteropServices.Marshal]::GetTypedObjectForIUnknown($audioEndpointVolume, [IAudioEndpointVolume])
-      [float]$volume = 0; $volumeInterface.GetMasterVolumeLevelScalar([ref]$volume)
-      [bool]$muted = $false; $volumeInterface.GetMute([ref]$muted)
-      Write-Output "$([Math]::Round($volume * 100)),$muted"
-    `;
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
 
+[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioEndpointVolume {
+    int f0(); int f1(); int f2(); int f3(); int f4(); int f5(); int f6(); int f7(); int f8(); int f9();
+    int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, IntPtr pguidEventContext);
+    int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
+}
+
+[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice {
+    int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+}
+
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator {
+    int f0();
+    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);
+}
+
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+class MMDeviceEnumerator { }
+
+public class Audio {
+    public static bool IsMuted() {
+        var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumerator());
+        IMMDevice dev;
+        enumerator.GetDefaultAudioEndpoint(0, 1, out dev);
+        object o;
+        var guid = typeof(IAudioEndpointVolume).GUID;
+        dev.Activate(ref guid, 23, IntPtr.Zero, out o);
+        var vol = (IAudioEndpointVolume)o;
+        bool mute;
+        vol.GetMute(out mute);
+        return mute;
+    }
+}
+'@
+[Audio]::IsMuted()
+`;
     const { stdout } = await execAsync(
-      `powershell -ExecutionPolicy Bypass -NoProfile -Command "${script.replace(/"/g, '\\"')}"`,
-      { windowsHide: true }
+      `powershell -ExecutionPolicy Bypass -NoProfile -Command "${script.replace(/"/g, '\\"').replace(/'/g, "''")}"`,
+      { windowsHide: true, timeout: 10000 }
     );
-
-    const [volumeStr, mutedStr] = stdout.trim().split(',');
-    const volume = parseFloat(volumeStr);
-    const isMuted = mutedStr.toLowerCase() === 'true';
-
-    return {
-      volume: isNaN(volume) ? 100 : volume,
-      isMuted
-    };
+    return stdout.trim().toLowerCase() === 'true';
   } catch (error) {
-    console.error('Error getting current volume:', error);
-    return { volume: 100, isMuted: false };
+    safeError('Error checking mute state:', error);
+    return false; // Assume not muted if we can't check
   }
 }
 
 /**
- * Set system volume (Windows only)
- * @param volume - Volume level (0-100)
+ * Send volume mute key to toggle mute state
  */
-export async function setVolume(volume: number): Promise<void> {
+async function sendMuteKey(): Promise<void> {
   try {
-    const clampedVolume = Math.max(0, Math.min(100, volume));
-    const volumeScalar = clampedVolume / 100;
-
-    const script = `
-      Add-Type -TypeDefinition @"
-      using System.Runtime.InteropServices;
-      [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-      interface IAudioEndpointVolume {
-        int NotImpl1(); int NotImpl2();
-        int GetChannelCount(out int channelCount);
-        int SetMasterVolumeLevel(float level, System.Guid eventContext);
-        int SetMasterVolumeLevelScalar(float level, System.Guid eventContext);
-        int GetMasterVolumeLevel(out float level);
-        int GetMasterVolumeLevelScalar(out float level);
-      }
-"@
-      $deviceEnumeratorType = [Type]::GetTypeFromCLSID([Guid]"BCDE0395-E52F-467C-8E3D-C4579291692E")
-      $deviceEnumerator = [Activator]::CreateInstance($deviceEnumeratorType)
-      $defaultDevice = $deviceEnumerator.GetDefaultAudioEndpoint(0, 1)
-      $audioEndpointVolumeType = [Type]::GetTypeFromCLSID([Guid]"5CDF2C82-841E-4546-9722-0CF74078229A")
-      $audioEndpointVolume = [System.Runtime.InteropServices.Marshal]::GetComInterfaceForObject($defaultDevice, [IAudioEndpointVolume])
-      $volumeInterface = [System.Runtime.InteropServices.Marshal]::GetTypedObjectForIUnknown($audioEndpointVolume, [IAudioEndpointVolume])
-      $guid = [Guid]::Empty
-      $volumeInterface.SetMasterVolumeLevelScalar(${volumeScalar}, $guid)
-    `;
-
+    // Use PowerShell to send the volume mute key (VK_VOLUME_MUTE = 0xAD = 173)
     await execAsync(
-      `powershell -ExecutionPolicy Bypass -NoProfile -Command "${script.replace(/"/g, '\\"')}"`,
-      { windowsHide: true }
+      `powershell -ExecutionPolicy Bypass -NoProfile -Command "(New-Object -ComObject WScript.Shell).SendKeys([char]173)"`,
+      { windowsHide: true, timeout: 5000 }
     );
   } catch (error) {
-    console.error('Error setting volume:', error);
+    safeError('Error sending mute key:', error);
     throw error;
   }
 }
 
 /**
- * Mute system audio (Windows only)
- */
-export async function muteAudio(): Promise<void> {
-  try {
-    const script = `
-      Add-Type -TypeDefinition @"
-      using System.Runtime.InteropServices;
-      [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-      interface IAudioEndpointVolume {
-        int NotImpl1(); int NotImpl2(); int NotImpl3(); int NotImpl4(); int NotImpl5(); int NotImpl6(); int NotImpl7(); int NotImpl8(); int NotImpl9(); int NotImpl10();
-        int SetMute([MarshalAs(UnmanagedType.Bool)] bool isMuted, System.Guid eventContext);
-      }
-"@
-      $deviceEnumeratorType = [Type]::GetTypeFromCLSID([Guid]"BCDE0395-E52F-467C-8E3D-C4579291692E")
-      $deviceEnumerator = [Activator]::CreateInstance($deviceEnumeratorType)
-      $defaultDevice = $deviceEnumerator.GetDefaultAudioEndpoint(0, 1)
-      $audioEndpointVolumeType = [Type]::GetTypeFromCLSID([Guid]"5CDF2C82-841E-4546-9722-0CF74078229A")
-      $audioEndpointVolume = [System.Runtime.InteropServices.Marshal]::GetComInterfaceForObject($defaultDevice, [IAudioEndpointVolume])
-      $volumeInterface = [System.Runtime.InteropServices.Marshal]::GetTypedObjectForIUnknown($audioEndpointVolume, [IAudioEndpointVolume])
-      $guid = [Guid]::Empty
-      $volumeInterface.SetMute($true, $guid)
-    `;
-
-    await execAsync(
-      `powershell -ExecutionPolicy Bypass -NoProfile -Command "${script.replace(/"/g, '\\"')}"`,
-      { windowsHide: true }
-    );
-  } catch (error) {
-    console.error('Error muting audio:', error);
-    throw error;
-  }
-}
-
-/**
- * Unmute system audio (Windows only)
- */
-export async function unmuteAudio(): Promise<void> {
-  try {
-    const script = `
-      Add-Type -TypeDefinition @"
-      using System.Runtime.InteropServices;
-      [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-      interface IAudioEndpointVolume {
-        int NotImpl1(); int NotImpl2(); int NotImpl3(); int NotImpl4(); int NotImpl5(); int NotImpl6(); int NotImpl7(); int NotImpl8(); int NotImpl9(); int NotImpl10();
-        int SetMute([MarshalAs(UnmanagedType.Bool)] bool isMuted, System.Guid eventContext);
-      }
-"@
-      $deviceEnumeratorType = [Type]::GetTypeFromCLSID([Guid]"BCDE0395-E52F-467C-8E3D-C4579291692E")
-      $deviceEnumerator = [Activator]::CreateInstance($deviceEnumeratorType)
-      $defaultDevice = $deviceEnumerator.GetDefaultAudioEndpoint(0, 1)
-      $audioEndpointVolumeType = [Type]::GetTypeFromCLSID([Guid]"5CDF2C82-841E-4546-9722-0CF74078229A")
-      $audioEndpointVolume = [System.Runtime.InteropServices.Marshal]::GetComInterfaceForObject($defaultDevice, [IAudioEndpointVolume])
-      $volumeInterface = [System.Runtime.InteropServices.Marshal]::GetTypedObjectForIUnknown($audioEndpointVolume, [IAudioEndpointVolume])
-      $guid = [Guid]::Empty
-      $volumeInterface.SetMute($false, $guid)
-    `;
-
-    await execAsync(
-      `powershell -ExecutionPolicy Bypass -NoProfile -Command "${script.replace(/"/g, '\\"')}"`,
-      { windowsHide: true }
-    );
-  } catch (error) {
-    console.error('Error unmuting audio:', error);
-    throw error;
-  }
-}
-
-/**
- * Save current volume state and mute audio for recording
+ * Check mute state and mute audio for recording (if not already muted)
  */
 export async function saveAndMuteAudio(): Promise<void> {
   try {
-    // Store current state
-    previousVolumeState = await getCurrentVolume();
-    console.log('Saved audio state:', previousVolumeState);
+    // Check if already muted
+    wasAlreadyMuted = await isMuted();
+    safeLog('Audio already muted:', wasAlreadyMuted);
 
-    // Mute the audio
-    await muteAudio();
-
-    // Also set volume to 0 as a fallback
-    await setVolume(0);
+    if (!wasAlreadyMuted) {
+      // Only mute if not already muted
+      safeLog('Muting audio for recording');
+      await sendMuteKey();
+    } else {
+      safeLog('Audio already muted, skipping mute');
+    }
   } catch (error) {
-    console.error('Error saving and muting audio:', error);
+    safeError('Error muting audio:', error);
     throw error;
   }
 }
 
 /**
- * Restore previously saved volume state after recording
+ * Restore audio (unmute) after recording if we muted it
  */
 export async function restoreAudio(): Promise<void> {
   try {
-    if (!previousVolumeState) {
-      console.warn('No previous volume state to restore');
-      return;
-    }
-
-    console.log('Restoring audio state:', previousVolumeState);
-
-    // Restore volume level
-    await setVolume(previousVolumeState.volume);
-
-    // Restore mute state
-    if (previousVolumeState.isMuted) {
-      await muteAudio();
+    if (!wasAlreadyMuted) {
+      // Only unmute if we were the ones who muted it
+      safeLog('Unmuting audio after recording');
+      await sendMuteKey();
     } else {
-      await unmuteAudio();
+      safeLog('Audio was already muted before recording, leaving muted');
     }
-
-    // Clear saved state
-    previousVolumeState = null;
   } catch (error) {
-    console.error('Error restoring audio:', error);
+    safeError('Error restoring audio:', error);
     throw error;
   }
 }
