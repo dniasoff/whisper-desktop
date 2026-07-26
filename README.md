@@ -271,8 +271,9 @@ curl -X POST http://127.0.0.1:4444/v1/audio/transcriptions \
 
 - **Root cause in this repo/worktree:** feature branches created from worktrees may not have upstream tracking configured (only `main` had pull wiring), which makes `git pull` unreliable/ambiguous on those branches.
 - **Fix for current branch:**
-  - `git branch --set-upstream-to=origin/main <your-branch>`
+  - `git push -u origin <your-branch>` (or set upstream to your fork remote branch)
   - `git config pull.rebase false`
+  - Sync main explicitly when needed: `git fetch origin && git merge origin/main`
 - **If pull/apply still fails:**
   - Check unresolved operations: `git status` (look for merge/rebase in progress)
   - Abort safely when needed: `git merge --abort` or `git rebase --abort`
