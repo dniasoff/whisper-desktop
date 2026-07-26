@@ -267,6 +267,16 @@ curl -X POST http://127.0.0.1:4444/v1/audio/transcriptions \
   - Ensure Whisper Desktop is enabled
   - You may need to add the installed application path to the microphone access list
 
+### Git Pull/Apply Gets Stuck
+
+- **Root cause in this repo/worktree:** feature branches created from worktrees may not have upstream tracking configured (only `main` had pull wiring), which makes `git pull` unreliable/ambiguous on those branches.
+- **Fix for current branch:**
+  - `git branch --set-upstream-to=origin/main <your-branch>`
+  - `git config pull.rebase false`
+- **If pull/apply still fails:**
+  - Check unresolved operations: `git status` (look for merge/rebase in progress)
+  - Abort safely when needed: `git merge --abort` or `git rebase --abort`
+  - Re-try with a clean tree: `git stash push -u` (if needed), then `git pull`
 ## Development
 
 ### Available Commands
